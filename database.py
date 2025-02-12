@@ -48,6 +48,10 @@ def init_database():
         cursor.execute("ALTER TABLE auctions ADD COLUMN pet_level INTEGER DEFAULT 0")
     except sqlite3.OperationalError:
         pass
+    try:
+        cursor.execute("ALTER TABLE auctions ADD COLUMN rarity TEXT DEFAULT 'Unknown'")
+    except sqlite3.OperationalError:
+        pass  
 
     conn.commit()
     conn.close()

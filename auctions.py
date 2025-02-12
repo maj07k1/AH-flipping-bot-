@@ -35,21 +35,6 @@ def save_auction_data():
     auctions = fetch_auctions()
     df = pd.DataFrame(auctions)
 
-    reforge = ""  # Default to empty string
-
-    split_name = item_name.split(" ", 1)  # Splits "Fabled Livid Dagger" into ["Fabled", "Livid Dagger"]
-    if len(split_name) > 1 and split_name[0] in KNOWN_REFORGES:
-        reforge = split_name[0]  # Store the detected reforge
-        item_name = split_name[1]  # Remove reforge from the stored item name
-
-    rarity = "Unknown"  # Default if not found
-
-    for r in KNOWN_RARITIES:
-        if r.upper() in item_lore.upper():  # Check if rarity exists in lore
-            rarity = r
-            break
-
-
     if "bin" not in df.columns:
         df["bin"] = False
 
@@ -67,21 +52,30 @@ def save_auction_data():
         item_lore = str(row.get("item_lore", ""))
         is_bin = 1 if row.get("bin", False) else 0
 
-        # --- Example: star count, recombobulated, enchant checks ---
         star_count = item_lore.count("✪")
         recombobulated = 1 if "Recombobulated" in item_lore else 0
         has_soul_eater = 1 if "Soul Eater" in item_lore else 0
         has_one_for_all = 1 if "One For All" in item_lore else 0
 
-        # --- NEW: parse pet level (and maybe strip from name) ---
+        reforge = ""  
+        rarity = "Unknown"
         pet_level = 0
 
-        # Check if item_name starts with "Lvl X ..."
+        split_name = item_name.split(" ", 1)  
+        if len(split_name) > 1 and split_name[0] in KNOWN_REFORGES:
+            reforge = split_name[0]  
+            item_name = split_name[1] 
+
+        for r in KNOWN_RARITIES:
+            if r.upper() in item_lore.upper():  
+                rarity = r
+                break
+
+
         match = PET_REGEX.match(item_name)
         if match:
-            pet_level = int(match.group(1))  # the numeric level
-            item_name = match.group(2).strip()  # the rest of the name, e.g. "Tiger" or "Baby Yeti"
-
+            pet_level = int(match.group(1))  
+            item_name = match.group(2).strip() 
         # Insert or replace in DB
         cursor.execute("""
             INSERT OR REPLACE INTO auctions 
