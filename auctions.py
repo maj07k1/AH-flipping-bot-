@@ -2,7 +2,7 @@ import requests
 import time
 import sqlite3
 from ml_models import predict_price, predict_price_random_forest
-from config import API_KEY, TRACKED_ITEMS, AUCTION_URL, DB_PATH, FETCH_MODE
+from config import API_KEY, TRACKED_ITEMS, AUCTION_URL, DB_PATH, FETCH_MODE,KNOWN_RARITIES
 import pyperclip
 import asyncio
 import pandas as pd
@@ -34,6 +34,14 @@ PET_REGEX = re.compile(r"^Lvl\s+(\d+)\s+(.*)$")
 def save_auction_data():
     auctions = fetch_auctions()
     df = pd.DataFrame(auctions)
+
+    rarity = "Unknown"  # Default if not found
+
+    for r in KNOWN_RARITIES:
+        if r.upper() in item_lore.upper():  # Check if rarity exists in lore
+            rarity = r
+            break
+
 
     if "bin" not in df.columns:
         df["bin"] = False
@@ -69,16 +77,17 @@ def save_auction_data():
 
         # Insert or replace in DB
         cursor.execute("""
-            INSERT OR REPLACE INTO auctions
+            INSERT OR REPLACE INTO auctions 
             (uuid, item_name, starting_bid, end_time, item_lore, bin,
-             star_count, recombobulated, has_soul_eater, has_one_for_all,
-             pet_level)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            star_count, recombobulated, has_soul_eater, has_one_for_all,
+            reforge, pet_level, rarity)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             uuid, item_name, starting_bid, end_time, item_lore, is_bin,
             star_count, recombobulated, has_soul_eater, has_one_for_all,
-            pet_level
+            reforge, pet_level, rarity
         ))
+
 
     conn.commit()
     conn.close()

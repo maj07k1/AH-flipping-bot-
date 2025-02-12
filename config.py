@@ -18,6 +18,8 @@ KNOWN_REFORGES = [
 
 ]
 
+KNOWN_RARITIES = ["Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic"]
+
 
 TRACKED_ITEMS = {
     # ⚔️ Weapons
