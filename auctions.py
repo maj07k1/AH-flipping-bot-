@@ -2,7 +2,7 @@ import requests
 import time
 import sqlite3
 from ml_models import predict_price, predict_price_random_forest
-from config import API_KEY, TRACKED_ITEMS, AUCTION_URL, DB_PATH, FETCH_MODE,KNOWN_RARITIES
+from config import AUCTION_URL, DB_PATH, FETCH_MODE,KNOWN_RARITIES,KNOWN_REFORGES
 import pyperclip
 import asyncio
 import pandas as pd
@@ -34,6 +34,13 @@ PET_REGEX = re.compile(r"^Lvl\s+(\d+)\s+(.*)$")
 def save_auction_data():
     auctions = fetch_auctions()
     df = pd.DataFrame(auctions)
+
+    reforge = ""  # Default to empty string
+
+    split_name = item_name.split(" ", 1)  # Splits "Fabled Livid Dagger" into ["Fabled", "Livid Dagger"]
+    if len(split_name) > 1 and split_name[0] in KNOWN_REFORGES:
+        reforge = split_name[0]  # Store the detected reforge
+        item_name = split_name[1]  # Remove reforge from the stored item name
 
     rarity = "Unknown"  # Default if not found
 
