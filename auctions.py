@@ -27,11 +27,11 @@ def fetch_auctions():
 
     return all_auctions
 
+import re
+
+PET_REGEX = re.compile(r"^Lvl\s+(\d+)\s+(.*)$")  
+
 def save_auction_data():
-    """
-    Fetch auctions from Hypixel API, parse star/enchant info from lore,
-    then save all data into the SQLite database.
-    """
     auctions = fetch_auctions()
     df = pd.DataFrame(auctions)
 
@@ -52,24 +52,34 @@ def save_auction_data():
         item_lore = str(row.get("item_lore", ""))
         is_bin = 1 if row.get("bin", False) else 0
 
-        # --- NEW: Parse details from lore ---
+        # --- Example: star count, recombobulated, enchant checks ---
         star_count = item_lore.count("✪")
         recombobulated = 1 if "Recombobulated" in item_lore else 0
         has_soul_eater = 1 if "Soul Eater" in item_lore else 0
         has_one_for_all = 1 if "One For All" in item_lore else 0
 
+        # --- NEW: parse pet level (and maybe strip from name) ---
+        pet_level = 0
+
+        # Check if item_name starts with "Lvl X ..."
+        match = PET_REGEX.match(item_name)
+        if match:
+            pet_level = int(match.group(1))  # the numeric level
+            item_name = match.group(2).strip()  # the rest of the name, e.g. "Tiger" or "Baby Yeti"
+
+        # Insert or replace in DB
         cursor.execute("""
-        INSERT OR REPLACE INTO auctions 
-        (uuid, item_name, starting_bid, end_time, item_lore, bin,
-         star_count, recombobulated, has_soul_eater, has_one_for_all)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO auctions
+            (uuid, item_name, starting_bid, end_time, item_lore, bin,
+             star_count, recombobulated, has_soul_eater, has_one_for_all,
+             pet_level)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             uuid, item_name, starting_bid, end_time, item_lore, is_bin,
-            star_count, recombobulated, has_soul_eater, has_one_for_all
+            star_count, recombobulated, has_soul_eater, has_one_for_all,
+            pet_level
         ))
 
     conn.commit()
     conn.close()
     print(f"✅ Saved auctions to database ({len(df)} records processed).")
-
-

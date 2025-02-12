@@ -15,6 +15,7 @@ from auctions import save_auction_data
 from ml_models import predict_price, predict_price_random_forest
 import pyperclip
 
+
 # 🔹 Initialize Bot
 intents = nextcord.Intents.default()
 intents.message_content = True  # ✅ Required for prefix commands
@@ -39,7 +40,7 @@ async def find_and_alert_underpriced_items():
         deals_found = False
 
         # 3️⃣ Check each item in your tracking list
-        for item in TRACKED_ITEMS.keys():
+        for item in TRACKED_ITEMS:
             # Filter BIN listings that match (case-insensitive) the item name
             item_listings = bin_df[bin_df["item_name"].str.contains(item, case=False, na=False)]
 
@@ -96,8 +97,11 @@ async def on_ready():
     print(f"✅ Logged in as {bot.user}")
     # ✅ Initialize the database table if not exists
     init_database()
-    # ✅ Start scanning auctions
+    
     bot.loop.create_task(find_and_alert_underpriced_items())
+
+
+
 
 
 async def send_discord_alert(message):

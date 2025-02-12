@@ -142,6 +142,10 @@ def predict_price_random_forest(item_name):
         lower_bound = median_price * 0.5
         upper_bound = median_price * 2.0
 
+        print(f"[DEBUG] Fetching data for {item_name}...")
+        print(df[["starting_bid", "end_time"]].tail(10))  # Show last 10 prices
+
+
         if predicted_price < lower_bound or predicted_price > upper_bound:
             print(f"⚠️ [RF] Unstable prediction for {item_name}, using median: {median_price:,}")
             return median_price
