@@ -155,3 +155,109 @@ def predict_price_random_forest(item_name):
     except Exception as e:
         print(f"❌ [RF] Error predicting price for {item_name}: {e}")
         return None
+    
+
+def predict_price_random_forest_for_group(item_name, rarity, reforge, pet_level):
+    """
+    Uses a Random Forest model to predict item price *only* for auctions
+    with the exact (item_name, rarity, reforge, pet_level). 
+    This way, each combination is handled separately.
+    """
+    try:
+        # 1) Query the auctions table *for this specific combo*
+        conn = sqlite3.connect(DB_PATH)
+        query = """
+            SELECT 
+                starting_bid, 
+                end_time, 
+                star_count, 
+                recombobulated, 
+                has_soul_eater, 
+                has_one_for_all
+            FROM auctions
+            WHERE item_name = ?
+              AND rarity = ?
+              AND reforge = ?
+              AND pet_level = ?
+        """
+        df = pd.read_sql_query(query, conn, params=[item_name, rarity, reforge, pet_level])
+        conn.close()
+
+        # 2) If no data, return None
+        if df.empty:
+            return None
+
+        # 3) Convert end_time to datetime
+        df["end_time"] = pd.to_datetime(df["end_time"], unit="ms", errors="coerce")
+        df.dropna(subset=["end_time"], inplace=True)
+        if df.empty:
+            return None
+
+        # 4) Remove outliers (IQR method)
+        Q1 = df["starting_bid"].quantile(0.25)
+        Q3 = df["starting_bid"].quantile(0.75)
+        IQR = Q3 - Q1
+        lower_bound = Q1 - 1.5 * IQR
+        upper_bound = Q3 + 1.5 * IQR
+        df = df[(df["starting_bid"] >= lower_bound) & (df["starting_bid"] <= upper_bound)]
+        if df.empty:
+            return None
+
+        # 5) Create features
+        df["day_of_week"] = df["end_time"].dt.dayofweek
+        df["hour_of_day"] = df["end_time"].dt.hour
+
+        X = df[[
+            "day_of_week",
+            "hour_of_day",
+            "star_count",
+            "recombobulated",
+            "has_soul_eater",
+            "has_one_for_all"
+        ]]
+        y = df["starting_bid"].values
+
+        # 6) Scale features
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+
+        # 7) Train the Random Forest
+        model = RandomForestRegressor(
+            n_estimators=300, 
+            max_depth=10, 
+            random_state=42
+        )
+        model.fit(X_scaled, y)
+
+        # 8) Predict ~24 hours from now
+        future_time = pd.Timestamp.now() + pd.Timedelta(hours=24)
+        future_features = pd.DataFrame([[
+            future_time.dayofweek, 
+            future_time.hour, 
+            0, # star_count -> default 0
+            0, # recombobulated -> default 0
+            0, # has_soul_eater -> default 0
+            0  # has_one_for_all -> default 0
+        ]], columns=[
+            "day_of_week", 
+            "hour_of_day", 
+            "star_count", 
+            "recombobulated", 
+            "has_soul_eater", 
+            "has_one_for_all"
+        ])
+        future_features_scaled = scaler.transform(future_features)
+        predicted_price = model.predict(future_features_scaled)[0]
+
+        # 9) Compare to the median to avoid weird outliers
+        median_price = np.median(y)
+        lb = median_price * 0.5
+        ub = median_price * 2.0
+        if predicted_price < lb or predicted_price > ub:
+            return median_price
+
+        return predicted_price
+
+    except Exception as e:
+        print(f"❌ [RF for group] Error: {e}")
+        return None

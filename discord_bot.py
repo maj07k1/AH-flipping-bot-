@@ -14,6 +14,7 @@ from auctions import fetch_auctions
 from auctions import save_auction_data
 from ml_models import predict_price, predict_price_random_forest
 import pyperclip
+from aggregator import get_processed_price, update_processed_prices
 
 
 # 🔹 Initialize Bot
@@ -31,6 +32,8 @@ async def find_and_alert_underpriced_items():
         if "bin" not in df.columns:
             df["bin"] = False
         save_auction_data()
+
+        update_processed_prices()
 
         # 2️⃣ Pull the current BIN auctions from the DB
         conn = sqlite3.connect(DB_PATH)
@@ -134,6 +137,137 @@ async def setfetchmode(ctx, mode: str):
         await ctx.send("❌ Invalid mode! Use `!setfetchmode collect` or `!setfetchmode live`.")
     
     print(f"🔄 Fetch mode updated: {FETCH_MODE}")
+# discord_bot.py
+import nextcord
+from nextcord.ext import commands
+import sqlite3
+import pandas as pd
+import asyncio
+import pyperclip
+
+from config import DISCORD_TOKEN, TRACKED_ITEMS, CHANNEL_ID
+from database import init_database
+from auctions import save_auction_data
+from aggregator import update_processed_prices, get_processed_price
+from config import DB_PATH
+
+intents = nextcord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+
+@bot.event
+async def on_ready():
+    print(f"✅ Logged in as {bot.user}")
+    # 1) Ensure the DB tables (auctions, processed_prices) are created
+    init_database()
+    # 2) Start scanning for deals
+    bot.loop.create_task(find_and_alert_underpriced_items())
+
+
+async def find_and_alert_underpriced_items():
+    while True:
+        # a) Fetch new data
+        save_auction_data()
+
+        # b) Update the aggregated 'processed_prices'
+        update_processed_prices()
+
+        # c) Load BIN auctions
+        conn = sqlite3.connect(DB_PATH)
+        bin_df = pd.read_sql_query("SELECT * FROM auctions WHERE bin = 1", conn)
+        conn.close()
+
+        deals_found = False
+
+        # d) Check each tracked item
+        for item in TRACKED_ITEMS:
+            # Filter by item_name
+            item_listings = bin_df[bin_df["item_name"].str.contains(item, case=False, na=False)]
+            if item_listings.empty:
+                continue
+
+            for _, auction in item_listings.iterrows():
+                min_price_found = auction["starting_bid"]
+                auction_uuid = auction["uuid"]
+
+                # Some basic sanity checks
+                if min_price_found <= 0 or min_price_found > 2_000_000_000:
+                    continue
+
+                # e) We need the columns to look up the aggregator:
+                item_name = auction["item_name"]
+                rarity = auction["rarity"]
+                reforge = auction["reforge"]
+                pet_level = auction["pet_level"]
+
+                # f) Get the aggregated price from processed_prices
+                price_info = get_processed_price(item_name, rarity, reforge, pet_level)
+                if not price_info:
+                    # Possibly fallback to just the item_name or skip
+                    continue
+
+                median_price = price_info["median_price"]
+                predicted_price = price_info["predicted_price_rf"]  # or use LR
+                if predicted_price is None or predicted_price <= 0:
+                    predicted_price = median_price  # fallback
+
+                # g) Compare
+                if min_price_found < predicted_price * 0.9:
+                    deals_found = True
+                    potential_profit = int(predicted_price * 0.98 - min_price_found)
+                    message = (
+                        f"🔥 **{item_name}** is undervalued!\n"
+                        f"💰 **BIN**: {min_price_found:,.0f} coins\n"
+                        f"📈 **Predicted**: {predicted_price:,.0f} coins\n"
+                        f"💸 **Profit**: {potential_profit:,.0f} coins\n"
+                        f"🛒 `/viewauction {auction_uuid}`"
+                    )
+
+                    # Copy to clipboard (optional)
+                    try:
+                        pyperclip.copy(f"/viewauction {auction_uuid}")
+                    except Exception as e:
+                        print(f"⚠️ Could not copy to clipboard: {e}")
+
+                    await send_discord_alert(message)
+
+        if not deals_found:
+            print("⚠️ No underpriced items found.")
+
+        await asyncio.sleep(30)  # adjust as desired
+
+
+async def send_discord_alert(message):
+    await bot.wait_until_ready()
+    channel = bot.get_channel(CHANNEL_ID)
+    if channel:
+        await channel.send(message)
+    else:
+        print("❌ ERROR: Could not find the Discord channel!")
+
+
+@bot.command()
+async def setfetchmode(ctx, mode: str):
+    """
+    Allows users to change fetch mode dynamically via Discord.
+    Usage: !setfetchmode collect / live
+    """
+    global FETCH_MODE  # Access the global variable
+    
+    # Validate input
+    if mode.lower() == "collect":
+        FETCH_MODE = "COLLECT"
+        await ctx.send("🔄 **Fetch mode set to COLLECT (15 pages).**")
+    elif mode.lower() == "live":
+        FETCH_MODE = "LIVE"
+        await ctx.send("⚡ **Fetch mode set to LIVE (5 pages).**")
+    else:
+        await ctx.send("❌ Invalid mode! Use `!setfetchmode collect` or `!setfetchmode live`.")
+    print(f"🔄 Fetch mode updated: {FETCH_MODE}")
+    pass
+
+@bot.command()
 async def pricegraph(ctx, *, item_name: str):
     """
     Generates a simple price graph over time for a given item using data from the DB.
@@ -168,6 +302,8 @@ async def pricegraph(ctx, *, item_name: str):
 
     except Exception as e:
         await ctx.send(f"❌ Error generating price graph: {e}")
+
+    pass
 
 
 

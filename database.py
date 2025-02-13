@@ -1,11 +1,13 @@
 import sqlite3
 from config import DB_PATH
-import pandas as pd
 
 def init_database():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
+    # -------------------------
+    # Create "auctions" table
+    # -------------------------
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS auctions (
             uuid TEXT PRIMARY KEY,
@@ -13,45 +15,39 @@ def init_database():
             starting_bid REAL,
             end_time INTEGER,
             item_lore TEXT,
-            bin INTEGER
+            bin INTEGER,
+            star_count INTEGER DEFAULT 0,
+            recombobulated INTEGER DEFAULT 0,
+            has_soul_eater INTEGER DEFAULT 0,
+            has_one_for_all INTEGER DEFAULT 0,
+            reforge TEXT DEFAULT '',
+            pet_level INTEGER DEFAULT 0,
+            rarity TEXT DEFAULT 'Unknown'
         );
     """)
 
-    # Add columns if they don't exist
-    try:
-        cursor.execute("ALTER TABLE auctions ADD COLUMN star_count INTEGER DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
+    # -------------------------
+    # Create "processed_prices" table
+    # -------------------------
+    # If you want to group by star_count, recombobulated, etc. as well,
+    # just add them to the schema and primary key as needed.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS processed_prices (
+            item_name TEXT,
+            rarity TEXT,
+            reforge TEXT,
+            pet_level INTEGER DEFAULT 0,
 
-    try:
-        cursor.execute("ALTER TABLE auctions ADD COLUMN recombobulated INTEGER DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
+            median_price REAL,
+            predicted_price_rf REAL,
+            predicted_price_lr REAL,
 
-    try:
-        cursor.execute("ALTER TABLE auctions ADD COLUMN has_soul_eater INTEGER DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
+            last_updated INTEGER,
 
-    try:
-        cursor.execute("ALTER TABLE auctions ADD COLUMN has_one_for_all INTEGER DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
-
-    # -- NEW COLUMNS:
-    try:
-        cursor.execute("ALTER TABLE auctions ADD COLUMN reforge TEXT DEFAULT ''")
-    except sqlite3.OperationalError:
-        pass
-
-    try:
-        cursor.execute("ALTER TABLE auctions ADD COLUMN pet_level INTEGER DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE auctions ADD COLUMN rarity TEXT DEFAULT 'Unknown'")
-    except sqlite3.OperationalError:
-        pass  
+            PRIMARY KEY (item_name, rarity, reforge, pet_level)
+        );
+    """)
 
     conn.commit()
     conn.close()
+    print("✅ Database initialized (auctions + processed_prices).")
